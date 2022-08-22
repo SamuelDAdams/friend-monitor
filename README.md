@@ -1,2 +1,2 @@
-# Example
-An example greeter plugin
+# Friend Monitor
+Stalk your friends with their permission
