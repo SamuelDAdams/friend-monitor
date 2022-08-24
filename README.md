@@ -1,2 +1,2 @@
 # Friend Monitor
-Stalk your friends with their permission
+Stalk your friends with their permission?
