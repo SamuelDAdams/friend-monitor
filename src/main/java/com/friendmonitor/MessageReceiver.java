@@ -4,6 +4,8 @@ import okhttp3.Response;
 import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
 
+import java.io.Console;
+
 interface MessageReceiverListener {
     void onMessage(String text);
     void onFailure();
@@ -17,7 +19,7 @@ public class MessageReceiver extends WebSocketListener {
     }
     @Override
     public void onOpen(WebSocket websocket, Response response) {
-
+        System.out.println(response);
     }
 
     @Override

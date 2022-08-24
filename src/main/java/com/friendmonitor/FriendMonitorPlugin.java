@@ -27,7 +27,7 @@ import java.util.stream.Collectors;
 @PluginDescriptor(
 	name = "Friend Monitor"
 )
-public class FriendMonitorPlugin extends Plugin
+public class FriendMonitorPlugin extends Plugin implements ConnectionListener
 {
 	@Getter
 	@Setter
@@ -48,6 +48,8 @@ public class FriendMonitorPlugin extends Plugin
 	@Getter
 	@Setter
 	private List<Quest> uncompletedQuests;
+
+	private ConnectionHandler connectionHandler;
 
 	@Inject
 	private Client client;
@@ -70,9 +72,12 @@ public class FriendMonitorPlugin extends Plugin
 	@Subscribe
 	public void onGameStateChanged(GameStateChanged gameStateChanged)
 	{
-		if (gameStateChanged.getGameState() == GameState.LOGGED_IN)
+		if (gameStateChanged.getGameState() == GameState.LOGGED_IN && connectionHandler == null)
 		{
-			client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "Example says " + config.greeting(), null);
+			Long accountHash = client.getAccountHash();
+			System.out.println(accountHash);
+
+			connectionHandler = new ConnectionHandler(accountHash, this);
 		}
 		if (gameStateChanged.getGameState() == GameState.LOGIN_SCREEN)
 		{
@@ -80,6 +85,8 @@ public class FriendMonitorPlugin extends Plugin
 			skills.clear();
 			uncompletedQuests.clear();
 			uncompletedQuests = null;
+			connectionHandler.close();
+			connectionHandler = null;
 		}
 	}
 
@@ -208,5 +215,9 @@ public class FriendMonitorPlugin extends Plugin
 			default:
 				return QuestState.IN_PROGRESS;
 		}
+	}
+
+	public void onMessage(String message) {
+		System.out.println(message);
 	}
 }
