@@ -49,7 +49,7 @@ class ConnectionHandler implements MessageReceiverListener {
 
     private void startSocketConnection() {
         OkHttpClient client = new OkHttpClient();
-        Request request = new Request.Builder().url("wss://localhost:1776").addHeader("account-hash", accountHash.toString()).build();
+        Request request = new Request.Builder().url("ws://localhost:7223/").addHeader("account-hash", accountHash.toString()).build();
         receiver = new MessageReceiver(this);
         server = client.newWebSocket(request, receiver);
         client.dispatcher().executorService().shutdown();
