@@ -72,7 +72,7 @@ public class FriendMonitorPlugin extends Plugin
 	{
 		if (gameStateChanged.getGameState() == GameState.LOGGED_IN)
 		{
-			client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "Example says " + config.greeting(), null);
+			//client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", "Example says " + config.greeting(), null);
 		}
 		if (gameStateChanged.getGameState() == GameState.LOGIN_SCREEN)
 		{
@@ -110,7 +110,7 @@ public class FriendMonitorPlugin extends Plugin
 	@Subscribe
 	public void onGameTick(GameTick tick) {
 			tickcounter++;
-			if (tickcounter >= 4 && !isWilderness() && !isPvpWorld()) { //TODO private chat off, and check if in common instances
+			if (tickcounter >= 4 && shouldBroadcast()) {
 				tickcounter = 0;
 				String playerName = client.getLocalPlayer().getName();
 				//playerType = client.getAccountType().name(); //Checks for ironmemes?
@@ -196,6 +196,10 @@ public class FriendMonitorPlugin extends Plugin
 	public boolean isWilderness()
 	{
 		return client.getVarbitValue(Varbits.IN_WILDERNESS) == 1;
+	}
+
+	public boolean shouldBroadcast() {
+		return !isPvpWorld() && !isWilderness() && (client.getVarbitValue(13674) == 2 && config.getPrivacyModeEnabled()); // varbit 13674 contains private chat status, 0=on, 1=friends, 2=off
 	}
 
 	public QuestState getState(Integer id) {
