@@ -16,7 +16,10 @@ import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import okhttp3.OkHttpClient;
 
+import java.io.Console;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -55,6 +58,9 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener
 	private Client client;
 
 	@Inject
+	private OkHttpClient httpClient;
+
+	@Inject
 	private FriendMonitorConfig config;
 
 	@Override
@@ -78,6 +84,14 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener
 			System.out.println(accountHash);
 
 			connectionHandler = new ConnectionHandler(accountHash, this);
+
+			AuthenticationClient authenticationClient = new AuthenticationClient(httpClient);
+
+			try {
+				authenticationClient.login();
+			} catch (IOException e) {
+				System.out.println(e);
+			}
 		}
 		if (gameStateChanged.getGameState() == GameState.LOGIN_SCREEN)
 		{
