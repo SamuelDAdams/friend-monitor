@@ -16,7 +16,7 @@ import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
-import okhttp3.OkHttpClient;
+import okhttp3.*;
 
 import java.io.Console;
 import java.io.IOException;
@@ -30,7 +30,7 @@ import java.util.stream.Collectors;
 @PluginDescriptor(
 	name = "Friend Monitor"
 )
-public class FriendMonitorPlugin extends Plugin implements ConnectionListener
+public class FriendMonitorPlugin extends Plugin implements ConnectionListener, AuthenticationClientListener
 {
 	@Getter
 	@Setter
@@ -63,6 +63,11 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener
 	@Inject
 	private FriendMonitorConfig config;
 
+	@Inject
+	private AuthenticationClient authenticationClient;
+
+	private AccountSession accountSession;
+
 	@Override
 	protected void startUp() throws Exception
 	{
@@ -85,9 +90,8 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener
 
 			connectionHandler = new ConnectionHandler(accountHash, this);
 
-			AuthenticationClient authenticationClient = new AuthenticationClient(httpClient);
-
 			try {
+				authenticationClient.setListener(this);
 				authenticationClient.login();
 			} catch (IOException e) {
 				System.out.println(e);
@@ -237,5 +241,31 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener
 
 	public void onMessage(String message) {
 		System.out.println(message);
+	}
+
+	@Override
+	public void onLoggedIn(String idToken, String refreshToken) {
+		accountSession = new AccountSession(httpClient, idToken, refreshToken);
+
+		Request r = new Request.Builder()
+				.url("https://localhost:7223/")
+				.build();
+
+		accountSession.getHttpClient().newCall(r).enqueue(new Callback() {
+			@Override
+			public void onFailure(Call call, IOException e) {
+
+			}
+
+			@Override
+			public void onResponse(Call call, Response response) throws IOException {
+				System.out.println(response);
+			}
+		});
+	}
+
+	@Override
+	public void onLoginFailed() {
+
 	}
 }
