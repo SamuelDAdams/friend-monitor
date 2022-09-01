@@ -94,7 +94,6 @@ public class AuthenticationClient {
             .build();
 
         LinkBrowser.browse(authUrl.toString());
-
     }
 
     private void processOauthResponse(String outgoingState, String incomingState, String code, String codeVerifier, String redirectUrl) {
