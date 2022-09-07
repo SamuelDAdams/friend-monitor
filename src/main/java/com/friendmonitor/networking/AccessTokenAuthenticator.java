@@ -33,10 +33,10 @@ public class AccessTokenAuthenticator implements Authenticator {
             return null;
         }
 
-        String originalToken = tokenProvider.getToken();
+        String originalToken = tokenProvider.getAccessToken();
 
         synchronized(this) {
-            String currentToken = tokenProvider.getToken();
+            String currentToken = tokenProvider.getAccessToken();
 
             if (response.request().header("Authorization") == null) {
                 return null;
@@ -52,7 +52,7 @@ public class AccessTokenAuthenticator implements Authenticator {
                         .build();
             }
 
-            currentToken = tokenProvider.refreshToken();
+            currentToken = tokenProvider.refreshAccessToken();
 
             if (currentToken == null || currentToken.equals(originalToken)) {
                 return null;

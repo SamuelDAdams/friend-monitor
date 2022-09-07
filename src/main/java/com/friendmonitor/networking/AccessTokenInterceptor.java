@@ -16,7 +16,7 @@ public class AccessTokenInterceptor implements Interceptor {
 
     @Override
     public @NotNull Response intercept(@NotNull Chain chain) throws IOException {
-        String token = tokenProvider.getToken();
+        String token = tokenProvider.getAccessToken();
 
         Request authenticatedRequest = chain.request()
                 .newBuilder()

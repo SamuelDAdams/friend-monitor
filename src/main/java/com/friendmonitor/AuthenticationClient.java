@@ -3,7 +3,6 @@ package com.friendmonitor;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.inject.Inject;
-import com.google.inject.name.Named;
 import com.sun.net.httpserver.HttpServer;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.util.LinkBrowser;
@@ -24,13 +23,12 @@ interface AuthenticationClientListener {
 
 @Slf4j
 public class AuthenticationClient {
-    private static final String GOOGLE_OAUTH_LOGIN_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
-    private static final String GOOGLE_OAUTH_TOKEN_ENDPOINT = "https://www.googleapis.com/oauth2/v4/token";
+    private static final String OAUTH_AUTHORIZE_ENDPOINT = "https://osrsfriendmonitorlogin.b2clogin.com/osrsfriendmonitorlogin.onmicrosoft.com/B2C_1_email/oauth2/v2.0/authorize";
+    public static final String OAUTH_TOKEN_ENDPOINT = "https://osrsfriendmonitorlogin.b2clogin.com/osrsfriendmonitorlogin.onmicrosoft.com/B2C_1_email/oauth2/v2.0/token";
 
-    private static final String CLIENT_ID = "498003058158-kt4ggbs1ulv8v2aovqjf27qp94p6knrv.apps.googleusercontent.com";
+    public static final String CLIENT_ID = "8dd9839d-f3e1-4499-a441-cb65837541f8";
 
-    // Note that this isn't actually secret since it's in the source code. We might not need this.
-    private static final String CLIENT_SECRET = "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";
+    public static final String API_SCOPE = "https://osrsfriendmonitorlogin.onmicrosoft.com/9aae51ed-fbc5-4acd-ae86-509c3e17b83b/activity.update";
 
     private static final HttpUrl apiBase = HttpUrl.get("https://localhost:7223/api");
 
@@ -50,8 +48,8 @@ public class AuthenticationClient {
     }
 
     public void login() throws IOException {
-        final String outgoingState = randomBase64(8);
-        final String codeVerifier = randomBase64(8);
+        final String outgoingState = randomBase64(32);
+        final String codeVerifier = randomBase64(32);
         final String codeChallenge = base64UrlEncodeNoPadding(sha256(codeVerifier));
         final String codeChallengeMethod = "S256";
 
@@ -83,11 +81,12 @@ public class AuthenticationClient {
             }
         });
 
-        HttpUrl authUrl = HttpUrl.get(GOOGLE_OAUTH_LOGIN_ENDPOINT).newBuilder()
+        HttpUrl authUrl = HttpUrl.get(OAUTH_AUTHORIZE_ENDPOINT).newBuilder()
             .addQueryParameter("response_type", "code")
-            .addQueryParameter("scope", "openid profile")
+            .addQueryParameter("scope", String.format("openid offline_access %s", API_SCOPE))
             .addQueryParameter("redirect_uri", redirectUrl)
             .addQueryParameter("client_id", CLIENT_ID)
+            .addQueryParameter("response_mode", "query")
             .addQueryParameter("state", outgoingState)
             .addQueryParameter("code_challenge", codeChallenge)
             .addQueryParameter("code_challenge_method", codeChallengeMethod)
@@ -102,14 +101,14 @@ public class AuthenticationClient {
             return;
         }
 
-        HttpUrl exchangeCodeForTokensUrl = HttpUrl.get(GOOGLE_OAUTH_TOKEN_ENDPOINT);
+        HttpUrl exchangeCodeForTokensUrl = HttpUrl.get(OAUTH_TOKEN_ENDPOINT);
 
         RequestBody formBody = new FormBody.Builder()
                 .addEncoded("code", code)
                 .addEncoded("redirect_uri", redirectUrl)
                 .addEncoded("client_id", CLIENT_ID)
-                .addEncoded("client_secret", CLIENT_SECRET)
                 .addEncoded("grant_type", "authorization_code")
+                .addEncoded("scope", String.format("%s offline_access", API_SCOPE))
                 .addEncoded("code_verifier", codeVerifier)
                 .build();
 
@@ -133,7 +132,7 @@ public class AuthenticationClient {
 
                 JsonObject responseJson = new Gson().fromJson(response.body().string(), JsonObject.class);
 
-                if (!responseJson.has("id_token")) {
+                if (!responseJson.has("access_token")) {
                     handleFailure();
                     return;
                 }
@@ -143,10 +142,10 @@ public class AuthenticationClient {
                     return;
                 }
 
-                String idToken = responseJson.get("id_token").getAsString();
+                String accessToken = responseJson.get("access_token").getAsString();
                 String refreshToken = responseJson.get("refresh_token").getAsString();
 
-                listener.onLoggedIn(idToken, refreshToken);
+                listener.onLoggedIn(accessToken, refreshToken);
             }
         });
     }
