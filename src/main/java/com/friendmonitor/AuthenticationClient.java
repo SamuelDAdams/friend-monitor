@@ -17,7 +17,7 @@ import java.security.SecureRandom;
 import java.util.Base64;
 
 interface AuthenticationClientListener {
-    void onLoggedIn(String idToken, String refreshToken);
+    void onLoggedIn(AccountSession httpClient);
     void onLoginFailed();
 }
 
@@ -145,9 +145,15 @@ public class AuthenticationClient {
                 String accessToken = responseJson.get("access_token").getAsString();
                 String refreshToken = responseJson.get("refresh_token").getAsString();
 
-                listener.onLoggedIn(accessToken, refreshToken);
+                listener.onLoggedIn(new AccountSession(httpClient, accessToken, refreshToken));
             }
         });
+    }
+
+    private void makeLoginCall(String accessToken, String refreshToken) {
+        AccountSession session = new AccountSession(httpClient, accessToken, refreshToken);
+
+        HttpUrl url = apiBase.newBuilder().addEncodedPathSegment("account").build();
     }
 
     private String base64UrlEncodeNoPadding(byte[] source) {

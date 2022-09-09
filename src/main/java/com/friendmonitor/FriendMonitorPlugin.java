@@ -71,7 +71,8 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener, A
 	@Override
 	protected void startUp() throws Exception
 	{
-		log.info("Example started!");
+		authenticationClient.setListener(this);
+		authenticationClient.login();
 	}
 
 	@Override
@@ -89,13 +90,6 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener, A
 			System.out.println(accountHash);
 
 			connectionHandler = new ConnectionHandler(accountHash, this);
-
-			try {
-				authenticationClient.setListener(this);
-				authenticationClient.login();
-			} catch (IOException e) {
-				System.out.println(e);
-			}
 		}
 		if (gameStateChanged.getGameState() == GameState.LOGIN_SCREEN)
 		{
@@ -123,7 +117,6 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener, A
 
 	@Subscribe
 	public void onVarbitChanged(VarbitChanged varb) {
-
 		if (uncompletedQuests == null || uncompletedQuests.isEmpty()) {
 			return;
 		}
@@ -244,8 +237,8 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener, A
 	}
 
 	@Override
-	public void onLoggedIn(String idToken, String refreshToken) {
-		accountSession = new AccountSession(httpClient, idToken, refreshToken);
+	public void onLoggedIn(AccountSession session) {
+		this.accountSession = session;
 
 		Request r = new Request.Builder()
 				.url("https://localhost:7223/")
