@@ -5,7 +5,6 @@ import com.friendmonitor.networking.AccessTokenInterceptor;
 import com.friendmonitor.networking.AccessTokenProvider;
 import com.friendmonitor.networking.AccessTokenProviderImpl;
 import com.friendmonitor.util.LocalhostHttpClientConverter;
-import jdk.nashorn.internal.objects.annotations.Getter;
 import okhttp3.OkHttpClient;
 
 public class AccountSession {
