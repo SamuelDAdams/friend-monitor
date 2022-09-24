@@ -8,14 +8,13 @@ import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.*;
 import net.runelite.api.coords.WorldPoint;
-import net.runelite.api.events.GameStateChanged;
-import net.runelite.api.events.GameTick;
-import net.runelite.api.events.StatChanged;
-import net.runelite.api.events.VarbitChanged;
+import net.runelite.api.events.*;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.api.widgets.WidgetInfo;
+import net.runelite.api.widgets.WidgetID;
 import okhttp3.*;
 
 import java.io.Console;
@@ -32,6 +31,8 @@ import java.util.stream.Collectors;
 )
 public class FriendMonitorPlugin extends Plugin implements ConnectionListener, AuthenticationClientListener
 {
+	private static final String GET_ACTIVITY = "Get Activity";
+	private static final int FRIEND_CHAT_STATUS_VARBIT = 13674;
 	@Getter
 	@Setter
 	private int tickcounter = 0;
@@ -138,7 +139,6 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener, A
 			if (tickcounter >= 4 && shouldBroadcast()) {
 				tickcounter = 0;
 				String playerName = client.getLocalPlayer().getName();
-				//playerType = client.getAccountType().name(); //Checks for ironmemes?
 				int playerWorld = client.getWorld();
 				WorldPoint playerPos = client.getLocalPlayer().getWorldLocation();
 
@@ -186,12 +186,6 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener, A
 
 			if(varbitChangedQuestsNeedToBeChecked) {
 				long startTime = System.currentTimeMillis();
-//				List<Quest> newlyCompletedQuests = new ArrayList<>();
-//				for(int i = 0; i < uncompletedQuests.size(); i++) {
-//					if(getState(uncompletedQuests.get(i).getId()).equals(QuestState.FINISHED)) {
-//						newlyCompletedQuests.add(uncompletedQuests.get(i));
-//					}
-//				}
 				List<Quest> newlyCompletedQuests = uncompletedQuests.stream().filter(q -> getState(q.getId()).equals(QuestState.FINISHED)).collect(Collectors.toList());
 				//TODO notify server of completed quest(s)
 				uncompletedQuests.removeAll(newlyCompletedQuests);
@@ -224,7 +218,7 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener, A
 	}
 
 	public boolean shouldBroadcast() {
-		return !isPvpWorld() && !isWilderness() && (client.getVarbitValue(13674) == 2 && config.getPrivacyModeEnabled()); // varbit 13674 contains private chat status, 0=on, 1=friends, 2=off
+		return !isPvpWorld() && !isWilderness() && (client.getVarbitValue(FRIEND_CHAT_STATUS_VARBIT) == 2 && config.getPrivacyModeEnabled()); // varbit 13674 contains private chat status, 0=on, 1=friends, 2=off
 	}
 
 	public QuestState getState(Integer id) {
@@ -236,6 +230,45 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener, A
 				return QuestState.NOT_STARTED;
 			default:
 				return QuestState.IN_PROGRESS;
+		}
+	}
+
+	@Subscribe
+	public void onMenuOpened(MenuOpened menu) {
+
+	}
+
+	@Subscribe
+	public void onMenuEntryAdded(MenuEntryAdded event) {
+		if ((event.getType() != MenuAction.CC_OP.getId() && event.getType() != MenuAction.CC_OP_LOW_PRIORITY.getId()))
+		{
+			return;
+		}
+
+		final String option = event.getOption();
+		final int componentId = event.getActionParam1();
+		final int groupId = WidgetInfo.TO_GROUP(componentId);
+
+		//TODO decide whether to keep all these. Only first one is required for friend list.
+		if (groupId == WidgetInfo.FRIENDS_LIST.getGroupId() && option.equals("Delete")
+				|| groupId == WidgetInfo.FRIENDS_CHAT.getGroupId() && (option.equals("Add ignore") || option.equals("Remove friend"))
+				|| (componentId == WidgetInfo.CLAN_MEMBER_LIST.getId() || componentId == WidgetInfo.CLAN_GUEST_MEMBER_LIST.getId()) && (option.equals("Add ignore") || option.equals("Remove friend"))
+				|| groupId == WidgetInfo.PRIVATE_CHAT_MESSAGE.getGroupId() && (option.equals("Add ignore") || option.equals("Message"))
+				|| groupId == WidgetID.GROUP_IRON_GROUP_ID && (option.equals("Add friend") || option.equals("Remove friend") || option.equals("Remove ignore"))
+		)
+		{
+			client.createMenuEntry(-2)
+					.setOption(GET_ACTIVITY)
+					.setTarget(event.getTarget())
+					.setType(MenuAction.RUNELITE)
+					.setIdentifier(event.getIdentifier())
+					.onClick(e ->
+					{
+						// TODO create request for history, if not in valid friends then add to pending friends
+						/*HiscoreEndpoint endpoint = findHiscoreEndpointFromPlayerName(e.getTarget());
+						String target = Text.removeTags(e.getTarget());
+						lookupPlayer(target, endpoint);*/
+					});
 		}
 	}
 
