@@ -13,11 +13,11 @@ enum ActivityUpdateType {
 }
 
 public abstract class ActivityUpdate {
-    int accountHash;
+    long accountHash;
     long timestamp;
     ActivityUpdateType type;
 
-    public ActivityUpdate(int accountHash, ActivityUpdateType type) {
+    public ActivityUpdate(long accountHash, ActivityUpdateType type) {
         this.accountHash = accountHash;
         this.type = type;
         this.timestamp = Instant.now().getEpochSecond();

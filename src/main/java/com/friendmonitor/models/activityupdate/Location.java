@@ -5,7 +5,7 @@ public class Location extends ActivityUpdate {
     int y;
     int plane;
 
-    public Location(int x, int y, int plane, int accountHash) {
+    public Location(int x, int y, int plane, long accountHash) {
         super(accountHash, ActivityUpdateType.LOCATION);
         this.x = x;
         this.y = y;

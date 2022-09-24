@@ -1,5 +1,8 @@
 package com.friendmonitor;
 
+import com.friendmonitor.models.activityupdate.ActivityUpdate;
+import com.friendmonitor.models.activityupdate.Location;
+import com.google.gson.Gson;
 import com.google.inject.Provides;
 import javax.inject.Inject;
 
@@ -15,6 +18,8 @@ import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.api.widgets.WidgetInfo;
 import net.runelite.api.widgets.WidgetID;
+import net.runelite.client.plugins.party.messages.LocationUpdate;
+import net.runelite.http.api.RuneLiteAPI;
 import okhttp3.*;
 
 import java.io.Console;
@@ -66,6 +71,9 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener, A
 
 	@Inject
 	private AuthenticationClient authenticationClient;
+
+	@Inject
+	private Gson gson;
 
 	private AccountSession accountSession;
 
@@ -129,8 +137,7 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener, A
 	@Subscribe
 	public void onGameTick(GameTick tick) {
 			tickcounter++;
-			if (tickcounter >= 4 && shouldBroadcast()) {
-				tickcounter = 0;
+			if (tickcounter % 4 == 0 && tickcounter!= 0 && shouldBroadcast()) {
 				String playerName = client.getLocalPlayer().getName();
 				int playerWorld = client.getWorld();
 				WorldPoint playerPos = client.getLocalPlayer().getWorldLocation();
@@ -189,6 +196,10 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener, A
 				System.out.println("Checked on varbit change - " + duration + "ms");
 			}
 
+			if(tickcounter % 60 == 0) {
+				sendUpdate();
+			}
+
 //			removeWaypoints();
 //			setWaypoints();
 
@@ -229,6 +240,26 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener, A
 	@Subscribe
 	public void onMenuOpened(MenuOpened menu) {
 
+	}
+
+	public void sendUpdate() {
+		WorldPoint wp = client.getLocalPlayer().getWorldLocation();
+		ActivityUpdate loc = new Location(wp.getX(), wp.getY(), wp.getPlane(), client.getAccountHash());
+		Request r = new Request.Builder()
+				.url("https://localhost:7223/api/activity")
+				.post(RequestBody.create(RuneLiteAPI.JSON, gson.toJson(loc)))
+				.build();
+		accountSession.getHttpClient().newCall(r).enqueue(new Callback() {
+			@Override
+			public void onFailure(Call call, IOException e) {
+				System.out.println(e.getMessage());
+			}
+
+			@Override
+			public void onResponse(Call call, Response response) throws IOException {
+				System.out.println(response.toString());
+			}
+		});
 	}
 
 	@Subscribe

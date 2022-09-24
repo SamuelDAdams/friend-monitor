@@ -4,7 +4,7 @@ public class QuestComplete extends ActivityUpdate {
 
     private int questId;
 
-    public QuestComplete(int questId, int accountHash) {
+    public QuestComplete(int questId, long accountHash) {
         super(accountHash, ActivityUpdateType.QUEST_COMPLETE);
         this.questId = questId;
     }
