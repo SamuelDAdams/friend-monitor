@@ -1,5 +1,6 @@
 package com.friendmonitor;
 
+import com.friendmonitor.account.AccountSession;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.inject.Inject;
@@ -16,8 +17,10 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Base64;
 
+import static okhttp3.internal.Util.EMPTY_REQUEST;
+
 interface AuthenticationClientListener {
-    void onLoggedIn(AccountSession httpClient);
+    void onLoggedIn(AccountSession session);
     void onLoginFailed();
 }
 
@@ -30,17 +33,19 @@ public class AuthenticationClient {
 
     public static final String API_SCOPE = "https://osrsfriendmonitorlogin.onmicrosoft.com/9aae51ed-fbc5-4acd-ae86-509c3e17b83b/activity.update";
 
-    private static final HttpUrl apiBase = HttpUrl.get("https://localhost:7223/api");
+    private static final HttpUrl serverBase = HttpUrl.get("https://localhost:7223");
+    private static final HttpUrl apiBase =  serverBase.newBuilder().addPathSegment("api").build();
 
     private final OkHttpClient httpClient;
 
     private AuthenticationClientListener listener;
 
     private HttpServer server;
-
+    private final Gson gson;
     @Inject
-    public AuthenticationClient(OkHttpClient httpClient) {
+    public AuthenticationClient(OkHttpClient httpClient, Gson gson) {
         this.httpClient = httpClient;
+        this.gson = gson;
     }
 
     public void setListener(AuthenticationClientListener listener) {
@@ -66,10 +71,9 @@ public class AuthenticationClient {
                 final String incomingState = url.queryParameter("state");
                 final String code = url.queryParameter("code");
 
-                //server.stop(0);
                 processOauthResponse(incomingState, outgoingState, code, codeVerifier, redirectUrl);
 
-                req.getResponseHeaders().set("Location", "https://localhost:7223/plugin-oauth-login-success");
+                req.getResponseHeaders().set("Location", serverBase.newBuilder().addPathSegment("plugin-oauth-login-success").build().toString());
                 req.sendResponseHeaders(302, 0);
             }
             catch (Exception e) {
@@ -145,15 +149,35 @@ public class AuthenticationClient {
                 String accessToken = responseJson.get("access_token").getAsString();
                 String refreshToken = responseJson.get("refresh_token").getAsString();
 
-                listener.onLoggedIn(new AccountSession(httpClient, accessToken, refreshToken));
+                makeLoginCall(accessToken, refreshToken);
             }
         });
     }
 
     private void makeLoginCall(String accessToken, String refreshToken) {
-        AccountSession session = new AccountSession(httpClient, accessToken, refreshToken);
+        AccountSession session = new AccountSession(httpClient, accessToken, refreshToken, gson, apiBase);
 
         HttpUrl url = apiBase.newBuilder().addEncodedPathSegment("account").build();
+
+        Request r = new Request.Builder()
+                .url(url)
+                .post(EMPTY_REQUEST)
+                .build();
+
+        session.getHttpClient().newCall(r).enqueue(new Callback() {
+            @Override
+            public void onFailure(@NotNull Call call, @NotNull IOException e) { handleFailure(); }
+
+            @Override
+            public void onResponse(@NotNull Call call, @NotNull Response response) throws IOException {
+                if (!response.isSuccessful()) {
+                    handleFailure();
+                    return;
+                }
+
+                listener.onLoggedIn(session);
+            }
+        });
     }
 
     private String base64UrlEncodeNoPadding(byte[] source) {

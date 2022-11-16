@@ -1,7 +1,12 @@
 package com.friendmonitor;
 
-import com.friendmonitor.models.activityupdate.ActivityUpdate;
-import com.friendmonitor.models.activityupdate.Location;
+import com.friendmonitor.account.AccountSession;
+import com.friendmonitor.account.runescape.RunescapeAccountSession;
+import com.friendmonitor.account.runescape.RunescapeAccountSessionListener;
+import com.friendmonitor.account.runescape.socket.server.FriendDeathMessage;
+import com.friendmonitor.activityupdate.models.ActivityUpdate;
+import com.friendmonitor.activityupdate.models.Location;
+import com.friendmonitor.activityupdate.models.PlayerDeath;
 import com.google.gson.Gson;
 import com.google.inject.Provides;
 import javax.inject.Inject;
@@ -12,18 +17,17 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.*;
 import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.events.*;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.api.widgets.WidgetInfo;
 import net.runelite.api.widgets.WidgetID;
-import net.runelite.client.plugins.party.messages.LocationUpdate;
-import net.runelite.http.api.RuneLiteAPI;
+import net.runelite.client.ui.overlay.worldmap.WorldMapPointManager;
+
 import okhttp3.*;
 
-import java.io.Console;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -34,7 +38,7 @@ import java.util.stream.Collectors;
 @PluginDescriptor(
 	name = "Friend Monitor"
 )
-public class FriendMonitorPlugin extends Plugin implements ConnectionListener, AuthenticationClientListener
+public class FriendMonitorPlugin extends Plugin implements RunescapeAccountSessionListener, AuthenticationClientListener
 {
 	private static final String GET_ACTIVITY = "Get Activity";
 	private static final int FRIEND_CHAT_STATUS_VARBIT = 13674;
@@ -50,6 +54,8 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener, A
 	@Setter
 	private boolean varbitChangedQuestsNeedToBeChecked = false;
 
+	private boolean needsToCreateRunescapeAccountSession = true;
+
 	@Getter
 	@Setter
 	private Map<Skill, Integer> skills;
@@ -58,10 +64,11 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener, A
 	@Setter
 	private List<Quest> uncompletedQuests;
 
-	private ConnectionHandler connectionHandler;
-
 	@Inject
 	private Client client;
+
+	@Inject
+	private ClientThread clientThread;
 
 	@Inject
 	private OkHttpClient httpClient;
@@ -75,7 +82,11 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener, A
 	@Inject
 	private Gson gson;
 
+	@Inject
+	private WorldMapPointManager worldMapManager;
+
 	private AccountSession accountSession;
+	private RunescapeAccountSession runescapeAccountSession;
 
 	@Override
 	protected void startUp() throws Exception
@@ -87,27 +98,36 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener, A
 	@Override
 	protected void shutDown() throws Exception
 	{
+		stop(true);
 		log.info("Example stopped!");
 	}
 
 	@Subscribe
 	public void onGameStateChanged(GameStateChanged gameStateChanged)
 	{
-		if (gameStateChanged.getGameState() == GameState.LOGGED_IN && connectionHandler == null)
-		{
-			Long accountHash = client.getAccountHash();
-			System.out.println(accountHash);
-
-			connectionHandler = new ConnectionHandler(accountHash, this);
+		if (gameStateChanged.getGameState() == GameState.LOGGED_IN && accountSession != null && runescapeAccountSession == null) {
+			needsToCreateRunescapeAccountSession = true;
 		}
-		if (gameStateChanged.getGameState() == GameState.LOGIN_SCREEN)
-		{
-			skillsLoaded = false;
-			skills.clear();
-			uncompletedQuests.clear();
-			uncompletedQuests = null;
-			connectionHandler.close();
-			connectionHandler = null;
+		else if (gameStateChanged.getGameState() == GameState.LOGIN_SCREEN) {
+			stop(false);
+		}
+	}
+
+	private void stop(boolean stopAccount) {
+		needsToCreateRunescapeAccountSession = false;
+
+		if (runescapeAccountSession != null) {
+			runescapeAccountSession.stop();
+		}
+
+		runescapeAccountSession = null;
+		skillsLoaded = false;
+		skills.clear();
+		uncompletedQuests.clear();
+		uncompletedQuests = null;
+
+		if (stopAccount) {
+			accountSession = null;
 		}
 	}
 
@@ -130,29 +150,87 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener, A
 			return;
 		}
 		varbitChangedQuestsNeedToBeChecked = true;
+	}
 
+	@Subscribe
+	public void onActorDeath(ActorDeath actorDeath) {
+		if (runescapeAccountSession == null) {
+			return;
+		}
+
+		Actor actor = actorDeath.getActor();
+
+		if (!(actor instanceof Player)) {
+			return;
+		}
+
+		Player player = (Player) actor;
+
+		if (player != client.getLocalPlayer()) {
+			return;
+		}
+
+		WorldPoint point = player.getWorldLocation();
+
+		PlayerDeath death = new PlayerDeath(
+			runescapeAccountSession.getAccountHash(),
+			point.getX(),
+			point.getY(),
+			point.getPlane(),
+			client.getWorld()
+		);
+
+		runescapeAccountSession.getActivityUpdateBroadcaster().broadcastActivityUpdate(death);
+	}
+
+	@Subscribe
+	public void onWidgetLoaded(WidgetLoaded widgetLoaded) {
+		if (widgetLoaded.getGroupId() != WidgetID.WORLD_MAP_GROUP_ID) {
+			return;
+		}
+
+		if (runescapeAccountSession == null) {
+			return;
+		}
+
+		runescapeAccountSession.setWorldMapIsShowing(true);
+	}
+
+	@Subscribe
+	public void onWidgetClosed(WidgetClosed widgetClosed) {
+		if (widgetClosed.getGroupId() != WidgetID.WORLD_MAP_GROUP_ID) {
+			return;
+		}
+
+		if (runescapeAccountSession == null) {
+			return;
+		}
+
+		runescapeAccountSession.setWorldMapIsShowing(false);
 	}
 
 
 	@Subscribe
 	public void onGameTick(GameTick tick) {
 			tickcounter++;
-			if (tickcounter % 4 == 0 && tickcounter!= 0 && shouldBroadcast()) {
-				String playerName = client.getLocalPlayer().getName();
-				int playerWorld = client.getWorld();
-				WorldPoint playerPos = client.getLocalPlayer().getWorldLocation();
 
-//				System.out.println("Player position x: " + playerPos.getX() + " y: " + playerPos.getY());
-//				System.out.println("Player plane: " + playerPos.getPlane());
-				//check for new events that need to be posted that are currently in the queue
-				//send update with position and new events
+			if (needsToCreateRunescapeAccountSession && accountSession != null) {
+				needsToCreateRunescapeAccountSession = false;
 
-				//LiveLocationSharingData d = new LiveLocationSharingData(playerName, playerPos.getX(), playerPos.getY(), playerPos.getPlane(), playerType, playerTitle, playerWorld); //Custom data type for what we need
-				//dataManager.makePostRequest(d); //send through socket
-				//log.info(String.format("x: %s, y: %s, plane: %s", playerPos.getX(), playerPos.getY(), playerPos.getPlane()));
+				accountSession.startRunescapeAccountSession(
+					Long.toString(client.getAccountHash()),
+					client.getLocalPlayer().getName(),
+					runescapeAccountSession -> {
+						this.runescapeAccountSession = runescapeAccountSession;
+						runescapeAccountSession.setListener(this);
+					},
+					gson,
+					worldMapManager
+				);
+			}
 
-				//request events from friends
-				//write events to chatb
+			if (shouldBroadcastLocation()) {
+				sendLocationUpdate();
 			}
 
 			if (!skillsLoaded) {
@@ -171,7 +249,7 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener, A
 				skillsLoaded = true;
 			}
 
-			if(uncompletedQuests == null) {
+			if (uncompletedQuests == null) {
 				long startTime = System.currentTimeMillis();
 				uncompletedQuests = new ArrayList<>();
 				for(Quest q : Quest.values()) {
@@ -184,9 +262,13 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener, A
 				System.out.println("Checked all quests - " + duration + "ms");
 			}
 
-			if(varbitChangedQuestsNeedToBeChecked) {
+			if (varbitChangedQuestsNeedToBeChecked) {
 				long startTime = System.currentTimeMillis();
-				List<Quest> newlyCompletedQuests = uncompletedQuests.stream().filter(q -> getState(q.getId()).equals(QuestState.FINISHED)).collect(Collectors.toList());
+				List<Quest> newlyCompletedQuests = uncompletedQuests
+						.stream()
+						.filter(q -> getState(q.getId()).equals(QuestState.FINISHED))
+						.collect(Collectors.toList());
+
 				//TODO notify server of completed quest(s)
 				uncompletedQuests.removeAll(newlyCompletedQuests);
 				varbitChangedQuestsNeedToBeChecked = false;
@@ -196,9 +278,6 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener, A
 				System.out.println("Checked on varbit change - " + duration + "ms");
 			}
 
-			if(tickcounter % 60 == 0) {
-				sendUpdate();
-			}
 
 //			removeWaypoints();
 //			setWaypoints();
@@ -221,8 +300,8 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener, A
 		return client.getVarbitValue(Varbits.IN_WILDERNESS) == 1;
 	}
 
-	public boolean shouldBroadcast() {
-		return !isPvpWorld() && !isWilderness() && (client.getVarbitValue(FRIEND_CHAT_STATUS_VARBIT) == 2 && config.getPrivacyModeEnabled()); // varbit 13674 contains private chat status, 0=on, 1=friends, 2=off
+	public boolean shouldBroadcastLocation() {
+		return !isPvpWorld() && !isWilderness();// && (client.getVarbitValue(FRIEND_CHAT_STATUS_VARBIT) == 2 && config.getPrivacyModeEnabled()); // varbit 13674 contains private chat status, 0=on, 1=friends, 2=off
 	}
 
 	public QuestState getState(Integer id) {
@@ -242,24 +321,15 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener, A
 
 	}
 
-	public void sendUpdate() {
+	public void sendLocationUpdate() {
 		WorldPoint wp = client.getLocalPlayer().getWorldLocation();
-		ActivityUpdate loc = new Location(wp.getX(), wp.getY(), wp.getPlane(), client.getAccountHash());
-		Request r = new Request.Builder()
-				.url("https://localhost:7223/api/activity")
-				.post(RequestBody.create(RuneLiteAPI.JSON, gson.toJson(loc)))
-				.build();
-		accountSession.getHttpClient().newCall(r).enqueue(new Callback() {
-			@Override
-			public void onFailure(Call call, IOException e) {
-				System.out.println(e.getMessage());
-			}
+		ActivityUpdate loc = new Location(wp.getX(), wp.getY(), wp.getPlane(), client.getWorld(), Long.toString(client.getAccountHash()));
 
-			@Override
-			public void onResponse(Call call, Response response) throws IOException {
-				System.out.println(response.toString());
-			}
-		});
+		if (runescapeAccountSession == null) {
+			return;
+		}
+
+		runescapeAccountSession.getActivityUpdateBroadcaster().broadcastActivityUpdate(loc);
 	}
 
 	@Subscribe
@@ -296,33 +366,25 @@ public class FriendMonitorPlugin extends Plugin implements ConnectionListener, A
 		}
 	}
 
-	public void onMessage(String message) {
-		System.out.println(message);
-	}
-
 	@Override
 	public void onLoggedIn(AccountSession session) {
 		this.accountSession = session;
-
-		Request r = new Request.Builder()
-				.url("https://localhost:7223/")
-				.build();
-
-		accountSession.getHttpClient().newCall(r).enqueue(new Callback() {
-			@Override
-			public void onFailure(Call call, IOException e) {
-
-			}
-
-			@Override
-			public void onResponse(Call call, Response response) throws IOException {
-				System.out.println(response);
-			}
-		});
 	}
 
 	@Override
 	public void onLoginFailed() {
 
+	}
+
+	@Override
+	public void invokeOnClientThread(Runnable r) {
+		clientThread.invoke(r);
+	}
+
+	@Override
+	public void friendDied(FriendDeathMessage message) {
+		clientThread.invoke(() -> {
+			client.addChatMessage(ChatMessageType.GAMEMESSAGE, "", message.getDisplayName() + " has died.", null);
+		});
 	}
 }
